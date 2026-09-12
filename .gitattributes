@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.sse -text
+*.svg text eol=lf
+
