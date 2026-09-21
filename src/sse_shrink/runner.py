@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from .errors import InputError, PredicateError
@@ -18,6 +19,34 @@ _ERROR_MESSAGES = {
     b"E:call": "predicate raised an exception",
     b"E:type": "predicate must return a boolean",
 }
+
+
+def _reap_worker(process: subprocess.Popen[bytes]) -> KeyboardInterrupt | None:
+    """Terminate, reap, and close one direct worker without masking its caller."""
+    interruption: KeyboardInterrupt | None = None
+
+    def safely(operation: Callable[[], object]) -> tuple[bool, object | None]:
+        nonlocal interruption
+        while True:
+            try:
+                return True, operation()
+            except KeyboardInterrupt as error:
+                if interruption is None:
+                    interruption = error
+            except (OSError, ValueError):
+                return False, None
+
+    _polled, returncode = safely(process.poll)
+    if returncode is None:
+        killed, _ignored = safely(process.kill)
+        if killed or safely(process.poll)[1] is not None:
+            safely(process.wait)
+    else:
+        safely(process.wait)
+    for pipe in (process.stdin, process.stdout, process.stderr):
+        if pipe is not None:
+            safely(pipe.close)
+    return interruption
 
 
 class SubprocessPredicate:
@@ -70,16 +99,16 @@ class SubprocessPredicate:
                 raise PredicateError("predicate process could not be started") from None
 
             try:
-                process.communicate(input=candidate, timeout=self._timeout)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.communicate()
-                raise PredicateError("predicate timed out") from None
-            except (OSError, ValueError, TypeError):
-                if process.poll() is None:
-                    process.kill()
-                    process.communicate()
-                raise PredicateError("predicate process communication failed") from None
+                try:
+                    process.communicate(input=candidate, timeout=self._timeout)
+                except subprocess.TimeoutExpired:
+                    raise PredicateError("predicate timed out") from None
+                except (OSError, ValueError, TypeError):
+                    raise PredicateError("predicate process communication failed") from None
+            finally:
+                cleanup_interruption = _reap_worker(process)
+                if cleanup_interruption is not None and sys.exc_info()[0] is None:
+                    raise cleanup_interruption
 
             if process.returncode != 0:
                 raise PredicateError("predicate process failed")

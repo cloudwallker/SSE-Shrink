@@ -17,12 +17,13 @@ SSE 故障样本，原样保留每个入选事件的字节，并导出便于审�
 
 ## 快速开始
 
-SSE Shrink 目前从源码安装，尚未发布到 PyPI。请使用 Python 3.11 或更高版本
-执行以下命令：
+SSE Shrink v0.2.0 需要 Python 3.11 或更高版本。可安装
+[GitHub Release](https://github.com/cloudwallker/SSE-Shrink/releases/tag/v0.2.0)
+中的 wheel，也可从源码安装。本项目尚未发布到 PyPI。
+
+先创建虚拟环境：
 
 ```console
-git clone https://github.com/cloudwallker/SSE-Shrink.git
-cd SSE-Shrink
 python -m venv .venv
 ```
 
@@ -39,10 +40,25 @@ Windows PowerShell：
 ```
 
 如果 PowerShell 阻止运行激活脚本，可将下方命令中的 `python` 替换为
-`.\.venv\Scripts\python.exe`。然后安装项目并运行离线演示：
+`.\.venv\Scripts\python.exe`。
+
+从 Release 下载 `sse_shrink-0.2.0-py3-none-any.whl` 到当前目录，安装 wheel
+以及运行导出复现测试所需的 pytest：
 
 ```console
-python -m pip install -e ".[dev]"
+python -m pip install ./sse_shrink-0.2.0-py3-none-any.whl "pytest>=8,<10"
+```
+
+也可以安装 v0.2.0 源码及开发工具：
+
+```console
+git clone --branch v0.2.0 https://github.com/cloudwallker/SSE-Shrink.git
+python -m pip install -e "./SSE-Shrink[dev]"
+```
+
+两种安装方式都可以运行离线演示：
+
+```console
 python -m sse_shrink demo --output demo-output --json
 python -m pytest demo-output/test_repro.py -q
 ```
@@ -123,8 +139,10 @@ python -m pytest shrink-output/test_repro.py -q
 5 秒以及 3 次稳定性重复。预算耗尽时可以导出最后一个已验证候选，但会明确
 标为 `minimality_verified=false`。如果初始基线在预算内仍未完成验证，则不会
 导出复现包。CLI 退出码分别表示成功（`0`）、输入或选项错误（`2`）、目标故障
-不存在或移除全部可缩减事件后仍满足判定（`3`）、判定错误/超时/不稳定（`4`）以及预算耗尽
-（`5`）。
+不存在或移除全部可缩减事件后仍满足判定（`3`）、判定错误/超时/不稳定（`4`）、
+预算耗尽（`5`）以及 Ctrl+C 中断（`130`）。使用 `--json` 时，中断会输出单个
+错误对象，包含 `status="error"`、`category="interrupted"` 和固定消息，不输出
+traceback。成功报告仍使用 `schema_version=1`；v0.2.0 保持 Python API 和缩减规则兼容。
 
 ## 边界与安全
 
@@ -135,6 +153,12 @@ stdout/stderr 或源文件绝对路径。
 判定函数是用户代码。每次调用会在新的限时子进程中执行，以隔离 Python 状态，
 但子进程**不是安全沙箱**，只能运行你信任的判定代码。回放 transport 本身离线，
 判定函数导入的其他代码仍可能访问网络或文件系统。
+
+超时、通信失败或中断时，运行器会终止并回收它直接启动的 worker，关闭管道。
+库调用方仍会收到 `KeyboardInterrupt`，CLI 则将其转换为退出码 130。清理范围
+不包含判定函数自行启动的任意后代进程，超时也不是对操作系统启动进程耗时的
+严格上限。worker 会先读完候选字节再加载用户代码，避免导入挂起时，Windows
+大输入的 stdin 写入先于超时处理阻塞。
 
 `.sse` 文件不能保存原始 TCP 分块与时序。复现测试中的 HTTPX 分块大小只是
 显式模拟。
@@ -156,7 +180,13 @@ python -m ruff check .
 python -m ruff format --check .
 python -m pytest -q
 python -m build
+python scripts/smoke_wheel.py
 ```
+
+烟测会检查 wheel 和源码归档内容，在新的临时环境中安装 wheel 与 pytest，
+再从仓库外验证两个版本入口、42→2 事件的演示及其导出测试。只有依赖安装阶段
+可以联网，后续烟测命令会阻止网络访问。CI 在 Ubuntu、Windows 与 Python
+3.11、3.14 的四种组合上运行这些检查。
 
 欢迎贡献代码与真实故障场景。提交前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，
 特别是其中有关敏感流内容的说明。本项目使用 [MIT License](LICENSE)。

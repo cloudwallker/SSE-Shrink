@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sse-shrink"
-version = "0.1.0"
+version = "0.2.0"
 description = "Shrink a broken LLM stream into a reproducible Python test."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,6 +22,10 @@ classifiers = [
 ]
 dependencies = ["httpx>=0.27,<0.29"]
 
+[project.urls]
+Repository = "https://github.com/cloudwallker/SSE-Shrink"
+Issues = "https://github.com/cloudwallker/SSE-Shrink/issues"
+
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "ruff>=0.9,<1", "build>=1.2,<2"]
 
@@ -37,6 +41,7 @@ include = [
   "/tests",
   "/examples",
   "/benchmarks",
+  "/scripts",
   "/docs/demo.svg",
   "/docs/performance.md",
   "/README.md",

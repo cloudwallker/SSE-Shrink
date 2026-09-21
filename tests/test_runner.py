@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import subprocess
+import threading
 import traceback
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
+import sse_shrink.runner as runner
 from sse_shrink.errors import InputError, PredicateError
 from sse_shrink.runner import SubprocessPredicate
 
@@ -13,6 +17,115 @@ def write_predicate(path: Path, source: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(source, encoding="utf-8")
     return path
+
+
+def _capture_worker_processes(monkeypatch: pytest.MonkeyPatch):
+    """Capture the real worker process without changing its behavior."""
+    real_popen = runner.subprocess.Popen
+    workers: list[subprocess.Popen[bytes]] = []
+    worker_started = threading.Event()
+    lock = threading.Lock()
+
+    def capture(*args: object, **kwargs: object) -> subprocess.Popen[bytes]:
+        process = real_popen(*args, **kwargs)
+        with lock:
+            workers.append(process)
+        worker_started.set()
+        return process
+
+    monkeypatch.setattr(runner.subprocess, "Popen", capture)
+    return workers, worker_started, lock
+
+
+def _call_with_worker_watchdog(
+    call: Callable[[], object],
+    workers: list[subprocess.Popen[bytes]],
+    worker_started: threading.Event,
+    lock: threading.Lock,
+    *,
+    hard_limit: float = 3.0,
+) -> tuple[BaseException | None, bool]:
+    """Run a call with an independent safety valve for a wedged worker."""
+    finished = threading.Event()
+    watchdog_tripped = threading.Event()
+    outcome: list[BaseException] = []
+
+    def terminate_workers() -> None:
+        with lock:
+            captured = list(workers)
+        for process in captured:
+            if process.poll() is not None:
+                continue
+            try:
+                process.kill()
+            except OSError:
+                pass
+            try:
+                process.wait(timeout=1)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+
+    def invoke() -> None:
+        try:
+            call()
+        except BaseException as error:
+            outcome.append(error)
+        finally:
+            finished.set()
+
+    def watchdog() -> None:
+        if not worker_started.wait(timeout=1):
+            return
+        if finished.wait(timeout=hard_limit):
+            return
+        watchdog_tripped.set()
+        terminate_workers()
+
+    caller = threading.Thread(target=invoke)
+    safety_valve = threading.Thread(target=watchdog)
+    caller.start()
+    safety_valve.start()
+    try:
+        assert finished.wait(timeout=hard_limit + 1), "runner call exceeded its hard limit"
+    finally:
+        terminate_workers()
+        caller.join(timeout=1)
+        safety_valve.join(timeout=1)
+    assert not caller.is_alive(), "runner thread did not stop after worker cleanup"
+    return (outcome[0] if outcome else None), watchdog_tripped.is_set()
+
+
+def _assert_workers_reaped_and_pipes_closed(workers: list[subprocess.Popen[bytes]]) -> None:
+    assert workers
+    for process in workers:
+        assert process.poll() is not None
+        assert process.stdin is None or process.stdin.closed
+
+
+class _InterruptedProcess:
+    """A real worker whose communication and first cleanup kill are interrupted."""
+
+    def __init__(self, process: subprocess.Popen[bytes]) -> None:
+        self._process = process
+        self._second_interrupt_pending = True
+
+    def __enter__(self) -> _InterruptedProcess:
+        return self
+
+    def __exit__(self, *arguments: object) -> object:
+        return self._process.__exit__(*arguments)
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._process, name)
+
+    def communicate(self, *arguments: object, **keywords: object) -> object:
+        raise KeyboardInterrupt("primary interrupt")
+
+    def kill(self) -> object:
+        if self._second_interrupt_pending:
+            self._second_interrupt_pending = False
+            raise KeyboardInterrupt("cleanup interrupt")
+        return self._process.kill()
 
 
 def test_runs_unicode_path_with_shell_metacharacters_and_binary_stdin(
@@ -175,6 +288,95 @@ def test_exception_details_and_output_are_not_exposed(
     assert "PRIVATE_CANDIDATE" not in str(caught.value)
     assert "CANARY_SECRET" not in captured.out
     assert "CANARY_SECRET" not in captured.err
+
+
+def test_large_candidate_import_hang_times_out_without_watchdog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Moving stdin consumption below module loading deadlocks Windows writes."""
+    predicate_path = write_predicate(
+        tmp_path / "hang_during_import.py",
+        "import threading\nthreading.Event().wait()\ndef fails(data):\n    return True\n",
+    )
+    workers, worker_started, lock = _capture_worker_processes(monkeypatch)
+    predicate = SubprocessPredicate(f"{predicate_path}:fails", timeout=0.5)
+
+    outcome, watchdog_tripped = _call_with_worker_watchdog(
+        lambda: predicate(b"x" * (2 * 1024 * 1024)), workers, worker_started, lock
+    )
+
+    assert isinstance(outcome, PredicateError)
+    assert str(outcome) == "predicate timed out"
+    assert not watchdog_tripped
+    _assert_workers_reaped_and_pipes_closed(workers)
+
+
+def test_large_candidate_call_hang_times_out_without_watchdog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A worker that has consumed a large candidate is still reaped on timeout."""
+    predicate_path = write_predicate(
+        tmp_path / "hang_during_call.py",
+        "import threading\ndef fails(data):\n    threading.Event().wait()\n",
+    )
+    workers, worker_started, lock = _capture_worker_processes(monkeypatch)
+    predicate = SubprocessPredicate(f"{predicate_path}:fails", timeout=0.5)
+
+    outcome, watchdog_tripped = _call_with_worker_watchdog(
+        lambda: predicate(b"x" * (2 * 1024 * 1024)), workers, worker_started, lock
+    )
+
+    assert isinstance(outcome, PredicateError)
+    assert str(outcome) == "predicate timed out"
+    assert not watchdog_tripped
+    _assert_workers_reaped_and_pipes_closed(workers)
+
+
+def test_successful_call_reaps_worker_and_closes_stdin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    predicate_path = write_predicate(
+        tmp_path / "returns.py", "def fails(data):\n    return data == b'ok'\n"
+    )
+    workers, _worker_started, _lock = _capture_worker_processes(monkeypatch)
+
+    assert SubprocessPredicate(f"{predicate_path}:fails")(b"ok") is True
+
+    _assert_workers_reaped_and_pipes_closed(workers)
+
+
+def test_keyboard_interrupt_reaps_worker_after_second_interrupt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cleanup must not replace the original cancellation or strand its worker."""
+    predicate_path = write_predicate(
+        tmp_path / "hang.py",
+        "import threading\nthreading.Event().wait()\ndef fails(data):\n    return True\n",
+    )
+    real_popen = runner.subprocess.Popen
+    workers: list[subprocess.Popen[bytes]] = []
+    worker_started = threading.Event()
+    lock = threading.Lock()
+
+    def interrupting_popen(*args: object, **kwargs: object) -> _InterruptedProcess:
+        process = real_popen(*args, **kwargs)
+        with lock:
+            workers.append(process)
+        worker_started.set()
+        return _InterruptedProcess(process)
+
+    monkeypatch.setattr(runner.subprocess, "Popen", interrupting_popen)
+    outcome, watchdog_tripped = _call_with_worker_watchdog(
+        lambda: SubprocessPredicate(f"{predicate_path}:fails")(b"candidate"),
+        workers,
+        worker_started,
+        lock,
+    )
+
+    assert isinstance(outcome, KeyboardInterrupt)
+    assert outcome.args == ("primary interrupt",)
+    assert not watchdog_tripped
+    _assert_workers_reaped_and_pipes_closed(workers)
 
 
 def test_timeout_terminates_process_without_exposing_path_in_traceback(tmp_path: Path) -> None:

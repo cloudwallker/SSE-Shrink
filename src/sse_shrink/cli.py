@@ -213,5 +213,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except PredicateError as error:
         _emit_error(str(error), category="predicate", json_output=json_output)
         return 4
+    except KeyboardInterrupt:
+        _emit_error("operation interrupted", category="interrupted", json_output=json_output)
+        return 130
     _emit_report(report, json_output=args.json)
     return exit_code

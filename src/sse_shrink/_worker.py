@@ -23,6 +23,11 @@ def main() -> int:
     function_name = sys.argv[2]
     result_path = Path(sys.argv[3])
 
+    try:
+        candidate = sys.stdin.buffer.read()
+    except BaseException:
+        return _write_result(result_path, b"E:call")
+
     sys.path.insert(0, str(predicate_path.parent))
     try:
         module_spec = importlib.util.spec_from_file_location(
@@ -44,7 +49,6 @@ def main() -> int:
         return _write_result(result_path, b"E:target")
 
     try:
-        candidate = sys.stdin.buffer.read()
         result = predicate(candidate)
     except BaseException:
         return _write_result(result_path, b"E:call")

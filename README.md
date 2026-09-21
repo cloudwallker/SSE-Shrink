@@ -17,12 +17,13 @@ application, but most events are irrelevant to the failure.
 
 ## Quick start
 
-SSE Shrink is currently installed from source and is not yet published on PyPI.
-Use Python 3.11 or newer for the following commands:
+SSE Shrink v0.2.0 requires Python 3.11 or newer. Install the wheel from the
+[GitHub Release](https://github.com/cloudwallker/SSE-Shrink/releases/tag/v0.2.0)
+or use a source checkout. This project is not published on PyPI.
+
+Create a virtual environment:
 
 ```console
-git clone https://github.com/cloudwallker/SSE-Shrink.git
-cd SSE-Shrink
 python -m venv .venv
 ```
 
@@ -39,10 +40,25 @@ Or on Windows PowerShell:
 ```
 
 If PowerShell blocks activation, replace `python` in the commands below with
-`.\.venv\Scripts\python.exe`. Then install and run the offline demo:
+`.\.venv\Scripts\python.exe`.
+
+Download `sse_shrink-0.2.0-py3-none-any.whl` from the Release into the current
+directory, then install it and pytest for the exported reproduction test:
 
 ```console
-python -m pip install -e ".[dev]"
+python -m pip install ./sse_shrink-0.2.0-py3-none-any.whl "pytest>=8,<10"
+```
+
+Alternatively, install the v0.2.0 source checkout with development tools:
+
+```console
+git clone --branch v0.2.0 https://github.com/cloudwallker/SSE-Shrink.git
+python -m pip install -e "./SSE-Shrink[dev]"
+```
+
+With either installation, run the offline demo:
+
+```console
 python -m sse_shrink demo --output demo-output --json
 python -m pytest demo-output/test_repro.py -q
 ```
@@ -128,7 +144,11 @@ export its last validated candidate, clearly marked `minimality_verified=false`.
 If the initial baseline cannot be verified within the budget, no reproduction bundle
 is exported. CLI exit codes distinguish success (`0`), input/options (`2`), target
 absence or a predicate that still matches after removing all reducible events (`3`),
-predicate failure, timeout, or instability (`4`), and budget exhaustion (`5`).
+predicate failure, timeout, or instability (`4`), budget exhaustion (`5`), and
+interruption with Ctrl+C (`130`). With `--json`, interruption reports one error
+object with `status="error"`, `category="interrupted"`, and a fixed message,
+without a traceback. Successful reports retain `schema_version=1`; the Python API
+and reduction rules are unchanged in v0.2.0.
 
 ## Boundaries and safety
 
@@ -141,6 +161,14 @@ Predicates are user code. Each call runs in a fresh, time-bounded subprocess to
 isolate Python state, but that subprocess is **not a security sandbox**. Only run
 predicates you trust. The replay transport is offline, but other code imported by
 your predicate may still use the network or filesystem.
+
+On timeout, communication failure, or interruption, the runner terminates and
+reaps its direct worker and closes its pipes. Library callers still receive
+`KeyboardInterrupt`; the CLI translates it to exit code 130. Cleanup does not
+manage arbitrary processes started by a predicate, and the timeout is not a hard
+bound on operating-system process startup. The worker reads candidate bytes before
+loading user code so that an import that hangs cannot block a large Windows stdin
+write ahead of timeout handling.
 
 An `.sse` file also cannot preserve original TCP chunk boundaries or timing. HTTPX
 chunk sizes in a reproduction are an explicit simulation.
@@ -166,7 +194,14 @@ python -m ruff check .
 python -m ruff format --check .
 python -m pytest -q
 python -m build
+python scripts/smoke_wheel.py
 ```
+
+The smoke check inspects wheel and source archive contents, installs the wheel and
+pytest in a fresh temporary environment, then checks both version entry points,
+the 42-to-2-event demo and its exported test outside the checkout. Dependency
+installation may access the network; subsequent smoke commands block network
+access. CI runs these checks on Ubuntu and Windows with Python 3.11 and 3.14.
 
 Contributions and real-world failure cases are welcome. Please read
 [CONTRIBUTING.md](CONTRIBUTING.md), especially the guidance about sensitive stream

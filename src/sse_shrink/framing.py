@@ -11,6 +11,7 @@ from .errors import InputError
 
 _UTF8_BOM = b"\xef\xbb\xbf"
 _LINE_ENDING = re.compile(rb"\r\n|[\r\n]")
+_LEADING_LINE_ENDINGS = re.compile(rb"[\r\n]+")
 
 
 @dataclass(frozen=True)
@@ -94,14 +95,21 @@ def frame_stream(
     prefix_end = bom_end
     start_line = 1
 
-    scanned_lines = iter(_lines(data, bom_end))
+    leading_endings = _LEADING_LINE_ENDINGS.match(data, bom_end)
+    if leading_endings is not None:
+        prefix_end = leading_endings.end()
+        start_line += (
+            data.count(b"\r", bom_end, prefix_end)
+            + data.count(b"\n", bom_end, prefix_end)
+            - data.count(b"\r\n", bom_end, prefix_end)
+        )
+
+    scanned_lines = iter(_lines(data, prefix_end))
     first_content_line: _Line | None = None
-    for line in scanned_lines:
-        if not line.blank:
-            first_content_line = line
-            break
-        prefix_end = line.end
-        start_line += 1
+    try:
+        first_content_line = next(scanned_lines)
+    except StopIteration:
+        pass
 
     if first_content_line is None:
         return FramedStream(prefix=data[:prefix_end], frames=())

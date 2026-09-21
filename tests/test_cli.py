@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+import sse_shrink.cli as cli
+
 PROJECT_ROOT = Path(__file__).parents[1]
 
 
@@ -42,7 +44,7 @@ def test_help_and_version_are_available_from_module_entrypoint() -> None:
     assert "minimize" in help_result.stdout
     assert "demo" in help_result.stdout
     assert version_result.returncode == 0
-    assert version_result.stdout.strip() == "sse-shrink 0.1.0"
+    assert version_result.stdout.strip() == "sse-shrink 0.2.0"
 
 
 def test_minimize_exports_two_required_events_and_one_json_object(tmp_path: Path) -> None:
@@ -409,3 +411,39 @@ def test_usage_error_does_not_echo_unknown_private_argument_value(tmp_path: Path
     assert result.stdout.count("\n") == 1
     assert json.loads(result.stdout)["category"] == "input"
     assert "PRIVATE_PATH_CANARY" not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+def test_keyboard_interrupt_exits_130_with_content_free_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], json_output: bool
+) -> None:
+    def interrupted(_args: object) -> tuple[dict[str, object], int]:
+        raise KeyboardInterrupt("PRIVATE_INTERRUPT_DETAILS")
+
+    monkeypatch.setattr(cli, "_run_minimize", interrupted)
+    arguments = [
+        "minimize",
+        "input.sse",
+        "--predicate",
+        "predicate.py:fails",
+        "--output",
+        "output",
+    ]
+    if json_output:
+        arguments.append("--json")
+
+    assert cli.main(arguments) == 130
+
+    captured = capsys.readouterr()
+    assert "PRIVATE_INTERRUPT_DETAILS" not in captured.out + captured.err
+    if json_output:
+        assert captured.err == ""
+        assert captured.out.count("\n") == 1
+        assert json.loads(captured.out) == {
+            "status": "error",
+            "category": "interrupted",
+            "message": "operation interrupted",
+        }
+    else:
+        assert captured.out == ""
+        assert captured.err == "error: operation interrupted\n"

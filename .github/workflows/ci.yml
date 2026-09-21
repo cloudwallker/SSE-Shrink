@@ -41,3 +41,6 @@ jobs:
 
       - name: Build distributions
         run: python -m build
+
+      - name: Test installed wheel outside the repository
+        run: python scripts/smoke_wheel.py
