@@ -85,10 +85,14 @@ def _call_with_worker_watchdog(
     safety_valve = threading.Thread(target=watchdog)
     caller.start()
     safety_valve.start()
+    verified = False
     try:
         assert finished.wait(timeout=hard_limit + 1), "runner call exceeded its hard limit"
+        _assert_workers_reaped_and_pipes_closed(workers)
+        verified = True
     finally:
-        terminate_workers()
+        if not verified:
+            terminate_workers()
         caller.join(timeout=1)
         safety_valve.join(timeout=1)
     assert not caller.is_alive(), "runner thread did not stop after worker cleanup"
