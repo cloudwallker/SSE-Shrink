@@ -18,15 +18,11 @@ repro-output/
 !.env.example
 !.env.sample
 
-# Local development material; keep the public repository source-only
+# Local development and internal validation material
 **/superpowers/
 **/tests/
 **/test/
 /.github/
-/docs/
-/benchmarks/
-/artifacts/
-/e2e/
-/examples/
 /AGENTS.md
 /scripts/
+/CONTRIBUTING.md

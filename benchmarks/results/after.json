@@ -1,0 +1,32 @@
+{
+  "python": "3.13.9",
+  "platform": "Windows",
+  "timing": "median of 5 rounds; tracemalloc measured separately",
+  "measurements": {
+    "long_line_10_mib": {
+      "input_bytes": 10485760,
+      "median_ms": 95.721,
+      "peak_python_bytes": 2477
+    },
+    "lf_10000_events": {
+      "input_bytes": 1000000,
+      "median_ms": 29.557,
+      "peak_python_bytes": 2772115
+    },
+    "crlf_10000_events": {
+      "input_bytes": 1000000,
+      "median_ms": 29.152,
+      "peak_python_bytes": 2772115
+    },
+    "join_empty_prefix": {
+      "input_bytes": 8388608,
+      "median_ms": 3.086,
+      "peak_python_bytes": 8411561
+    },
+    "join_bom": {
+      "input_bytes": 8388611,
+      "median_ms": 3.172,
+      "peak_python_bytes": 8411692
+    }
+  }
+}

@@ -38,8 +38,18 @@ packages = ["src/sse_shrink"]
 [tool.hatch.build.targets.sdist]
 include = [
   "/src",
+  "/examples/deliberately_faulty_predicate.py",
+  "/benchmarks/benchmark_framing.py",
+  "/benchmarks/results/after.json",
+  "/benchmarks/results/before.json",
+  "/benchmarks/results/dense-blank-lf.json",
+  "/benchmarks/results/join-interleaved.json",
+  "/benchmarks/results/v0.2.0-framing-alternating.json",
+  "/docs/demo.svg",
+  "/docs/performance.md",
   "/README.md",
   "/README.zh-CN.md",
+  "/CHANGELOG.md",
   "/LICENSE",
   "/pyproject.toml",
 ]

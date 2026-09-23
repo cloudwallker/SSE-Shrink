@@ -1,0 +1,32 @@
+{
+  "empty_prefix": {
+    "before": {
+      "median_ms": 4.0429,
+      "peak_python_bytes": 8411561
+    },
+    "after": {
+      "median_ms": 3.787,
+      "peak_python_bytes": 8411561
+    }
+  },
+  "bom_prefix": {
+    "before": {
+      "median_ms": 5.7098,
+      "peak_python_bytes": 16777373
+    },
+    "after": {
+      "median_ms": 2.7899,
+      "peak_python_bytes": 8411692
+    }
+  },
+  "single_frame": {
+    "before": {
+      "median_ms": 0.0005,
+      "peak_python_bytes": 552
+    },
+    "after": {
+      "median_ms": 0.0005,
+      "peak_python_bytes": 552
+    }
+  }
+}
