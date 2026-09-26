@@ -1,8 +1,12 @@
 # SSE Shrink
 
-Shrink a failure-inducing LLM event stream into a small, reproducible Python test.
+### Turn captured SSE failures into smaller Python reproductions
 
-[简体中文](README.zh-CN.md)
+**Remove irrelevant events while checking your target failure with a Python predicate, then export the retained stream and a pytest reproduction bundle.**
+
+English | [简体中文](README.zh-CN.md)
+
+[Quick start](#quick-start) · [Use your own failure](#minimize-your-own-failure) · [Boundaries and safety](#boundaries-and-safety)
 
 ![SSE Shrink workflow](docs/demo.svg)
 

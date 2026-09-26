@@ -1,8 +1,12 @@
 # SSE Shrink
 
-把会触发故障的 LLM 事件流缩减成小型、可复现的 Python 测试。
+### 把捕获的 SSE 故障缩减成更小的 Python 复现样本
 
-[English](README.md)
+**用 Python 判定函数确认目标故障仍然存在，逐步删除无关事件，再导出保留的事件流和 pytest 复现包。**
+
+[English](README.md) | 简体中文
+
+[快速开始](#快速开始) · [缩减自己的故障](#缩减自己的故障) · [边界与安全](#边界与安全)
 
 ![SSE Shrink 工作流程](docs/demo.svg)
 
