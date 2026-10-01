@@ -16,6 +16,8 @@ predicate whether the **same target failure** still occurs. It applies the matur
 failure samples, preserves the original bytes of every retained event, and exports
 an auditable HTTPX/pytest reproduction bundle.
 
+![SSE-Shrink](docs/cartoon-infographic.png)
+
 It is useful when a long captured response fails in a parser, SDK, gateway, or AI
 application, but most events are irrelevant to the failure.
 
